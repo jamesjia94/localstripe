@@ -1215,7 +1215,7 @@ class Source(StripeObject):
     # override it:
     _type = type
 
-    def __init__(self, type=None, currency=None, owner=None, metadata=None,
+    def __init__(self, type=None, currency=None, owner=None, metadata=None, token=None,
                  # custom arguments depending on the type:
                  sepa_debit=None,
                  **kwargs):
@@ -1223,33 +1223,41 @@ class Source(StripeObject):
             raise UserError(400, 'Unexpected ' + ', '.join(kwargs.keys()))
 
         try:
-            assert type in (
-                'ach_credit_transfer', 'ach_debit', 'alipay', 'bancontact',
-                'bitcoin', 'card', 'eps', 'giropay', 'ideal', 'multibanco',
-                'p24', 'sepa_debit', 'sofort', 'three_d_secure')
-            assert self._type(currency) is str and currency
             if owner is not None:
                 assert self._type(owner) is dict
                 assert self._type(owner.get('name', '')) is str
                 assert self._type(owner.get('email', '')) is str
-            if type == 'sepa_debit':
-                assert self._type(sepa_debit) is dict
-                assert 'iban' in sepa_debit
-                assert self._type(sepa_debit['iban']) is str
-                assert 14 <= len(sepa_debit['iban']) <= 34
+            if token is None:
+                assert type in (
+                    'ach_credit_transfer', 'ach_debit', 'alipay', 'bancontact',
+                    'bitcoin', 'card', 'eps', 'giropay', 'ideal', 'multibanco',
+                    'p24', 'sepa_debit', 'sofort', 'three_d_secure')
+                assert self._type(currency) is str and currency
+                if type == 'sepa_debit':
+                    assert self._type(sepa_debit) is dict
+                    assert 'iban' in sepa_debit
+                    assert self._type(sepa_debit['iban']) is str
+                    assert 14 <= len(sepa_debit['iban']) <= 34
         except AssertionError:
             raise UserError(400, 'Bad request')
 
         # All exceptions must be raised before this point.
         super().__init__()
 
-        self.type = type
         self.currency = currency
         self.owner = owner
         self.metadata = metadata or {}
         self.status = 'chargeable'
         self.usage = 'reusable'
 
+        if token:
+            token_obj = Token._api_retrieve(token)
+            self.type = token_obj.type
+            setattr(self, self.type, getattr(token_obj, token_obj.type))
+            return
+
+        self.type = type
+        
         if self.type == 'sepa_debit':
             self._sepa_debit_iban = \
                 re.sub(r'\s', '', sepa_debit['iban']).upper()
